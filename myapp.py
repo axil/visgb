@@ -28,24 +28,26 @@ def update(tab=None):
     if tab is None:
         tab = tabs.tabs[tabs.active].name
     if tab == 'xgboost':
-        for i in range(1): #self.averaging.value()):
+        for i in range(xgb_averaging.value):
             model = XGBClassifier(
                 n_estimators=xgb_n_estimators.value, 
                 #subsample=self.subsample.value(), 
-                random_state=i,
+                random_state=xgb_random_state.value + i,
                 #max_depth=self.max_depth.value()
             )
-            print('X =', X)
-            print('y =', y)
+            print(f'update {i}')
+#            print('X =', X)
+#            print('y =', y)
             model.fit(X, y)
-            print('X1 =', X1[:10])
+#            print('X1 =', X1[:10])
             preds = model.predict_proba(X1)[:,0].reshape(xgrid.shape)
             all_preds.append(preds)
     elif tab == 'catboost':
-        for i in range(1):#self.cb_averaging.value()):
+        for i in range(cat_averaging.value):
             model = CatBoostClassifier(
                 num_trees=cat_num_trees.value, 
-                random_seed=i,
+                depth=cat_depth.value, 
+                random_seed=cat_random_seed.value + i,
             )
             model.fit(X, y)
             preds = model.predict_proba(X1)[:,0].reshape(xgrid.shape)
@@ -85,23 +87,73 @@ im = p.image('image', source=source0, x=0, y=0, dw=100, dh=100, level="image")#,
 def slider_callback(attr, old, new):
     update()
 
-xgb_n_estimators = bm.Slider(start=1, end=100, value=10, title="n_estimators")
-cat_num_trees = bm.Slider(start=1, end=100, value=10, title="num_trees")
-xgb_n_estimators.on_change('value', slider_callback)
-cat_num_trees.on_change('value', slider_callback)
 
-xgb_tab = bm.TabPanel(child=xgb_n_estimators, title="XGBoost", name='xgboost')
-cat_tab = bm.TabPanel(child=cat_num_trees, title="CatBoost", name='catboost')
+params_dict = {
+    'xgb': {
+        'n_estimators': {'start': 1, 'end': 100, 'value': 10},
+        'random_state': {'start': 1, 'end': 100, 'value': 10},
+        'averaging':    {'start': 1, 'end': 20,  'value': 1},
+    },
+    'cat': {
+        'num_trees':    {'start': 1, 'end': 100, 'value': 10},
+        'random_seed':  {'start': 1, 'end': 100, 'value': 10},
+        'averaging':    {'start': 1, 'end': 20,  'value': 1},
+    }
+}
+        
+
+#params = defaultdict(dict)
+#tab_contents = {}
+#for model, pp in params_dict:
+#    for k, v in pp:
+#        v['title'] = k
+#        params[model][k] = bm.Slider(**v)
+#    tab_contents[model] = bl.Column(params[model].values)
+#
+xgb_max_depth = bm.Slider(start=1, end=10, value=3, title="max_depth")
+xgb_max_depth.on_change('value', slider_callback)
+xgb_n_estimators = bm.Slider(start=1, end=100, value=10, title="n_estimators")
+xgb_n_estimators.on_change('value', slider_callback)
+xgb_random_state = bm.Slider(start=1, end=100, value=10, title="random_state")
+xgb_random_state.on_change('value', slider_callback)
+xgb_averaging = bm.Slider(start=1, end=20, value=1, title="averaging")
+xgb_averaging.on_change('value', slider_callback)
+
+cat_num_trees = bm.Slider(start=1, end=100, value=10, title="num_trees")
+cat_num_trees.on_change('value', slider_callback)
+cat_depth = bm.Slider(start=1, end=16, value=7, title="depth")
+cat_depth.on_change('value', slider_callback)
+cat_random_seed = bm.Slider(start=1, end=100, value=10, title="random_seed")
+cat_random_seed.on_change('value', slider_callback)
+cat_averaging = bm.Slider(start=1, end=20, value=1, title="averaging")
+cat_averaging.on_change('value', slider_callback)
+
+# _____________ tabs _______________ 
+xgb_tab = bm.TabPanel(child=bl.Column(
+    xgb_max_depth,
+    xgb_n_estimators,
+    xgb_random_state,
+    xgb_averaging,
+), title="XGBoost", name='xgboost')
+cat_tab = bm.TabPanel(child=bl.Column(
+    cat_num_trees,
+    cat_depth,
+    cat_random_seed,
+    cat_averaging,
+), title="CatBoost", name='catboost')
 
 cat1x, cat1y = [], []
 cat2x, cat2y = [], []
 
 def callback(event):
-    if not event.modifiers['shift']:
+    class_id = active_class
+    if event.modifiers['shift']:
+        class_id = 3 - class_id
+    if class_id == 1:
         cat1x.append(event.x) 
         cat1y.append(event.y) 
         source1.data = dict(x=cat1x, y=cat1y)
-    else:
+    elif class_id == 2:
         cat2x.append(event.x) 
         cat2y.append(event.y) 
         source2.data = dict(x=cat2x, y=cat2y)
@@ -116,10 +168,32 @@ def panelActive(attr, old, new):
 #
     print("the active panel is " + str(tabs.active))
 
+active_class = 1
+
+def select_class(class_id):
+    def wrapped(new):
+        print(f'{class_id=}')
+        global active_class
+        if class_id == 1:
+            orange.update(active=not new)
+        elif class_id == 2:
+            blue.update(active=not new)
+        active_class = class_id
+        if new is False:
+            active_class = 3-active_class
+    return wrapped
+
+# __________ class buttons _______________
+blue = bm.Toggle(label='Class 1', active=True)
+orange = bm.Toggle(label='Class 2')
+blue.on_click(select_class(1))
+orange.on_click(select_class(2))
+
 tabs = bm.Tabs(tabs=[xgb_tab, cat_tab])
 tabs.on_change('active', panelActive)
 
 curdoc().add_root(bl.Column(
     p,
+    bl.Row(blue, orange),
     tabs,
 ))
